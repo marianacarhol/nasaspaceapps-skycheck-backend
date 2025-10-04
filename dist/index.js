@@ -1,14 +1,24 @@
-import "dotenv/config";
-import express from "express";
-import morgan from "morgan";
+import 'dotenv/config';
+import express from 'express';
+import morgan from 'morgan';
+import healthRouter from './routes/health';
+import riskRouter from './routes/risk';
 const app = express();
-const port = Number(process.env.PORT) || 3000;
-app.use(morgan("dev"));
 app.use(express.json());
-app.get("/", (_req, res) => {
-    res.send("Hello TypeScript + Morgan!");
+app.use(morgan('dev'));
+app.use('/health', healthRouter);
+app.use('/risk', riskRouter);
+// 404
+app.use((req, res) => {
+    res.status(404).json({ error: 'Not Found' });
 });
+// Error handler
+app.use((err, _req, res, _next) => {
+    console.error(err);
+    res.status(err.status || 500).json({ error: err.message || 'Internal Server Error' });
+});
+const port = Number(process.env.PORT) || 3000;
 app.listen(port, () => {
-    console.log(`API lista en http://localhost:${port}`);
+    console.log(`API listening on http://localhost:${port}`);
 });
 //# sourceMappingURL=index.js.map
