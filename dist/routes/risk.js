@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { getMeteomatics } from '../services/meteomatics';
-import { parseMeteomaticsJson } from '../utils/meteomatics';
+import { getMeteomatics } from '../services/meteomatics.js';
+import { parseMeteomaticsJson } from '../utils/meteomatics.js';
 const router = Router();
 const RiskSchema = z.object({
     lat: z.number().min(-90).max(90),

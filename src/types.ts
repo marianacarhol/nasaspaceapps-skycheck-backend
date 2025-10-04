@@ -15,3 +15,16 @@ export interface RiskResult {
   probabilities: Record<RiskCategory, number>; // 0..1
   details: any; // para depurar (podemos quitar en prod)
 }
+
+export type MeteomaticsJSON = {
+  data: Array<{
+    parameter: string;
+    coordinates: Array<{
+      lat: number;
+      lon: number;
+      dates: Array<{ date: string; value: number }>;
+    }>;
+  }>;
+  user?: string;
+  dateGenerated?: string;
+};
