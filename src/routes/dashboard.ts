@@ -22,8 +22,8 @@ const router = Router();
 const Body = z.object({
   lat: z.number().min(-90).max(90),
   lon: z.number().min(-180).max(180),
-  targetISO: z.string().optional(),                // hora objetivo (local o UTC)
-  timezone: z.string().default('America/Mazatlan') // tu zona por defecto
+  targetISO: z.string().optional(),
+  timezone: z.string().default('America/Mazatlan')
 });
 
 function kmh(ms: number) { return Math.round(ms * 3.6); }
@@ -63,14 +63,51 @@ router.post('/', async (req, res, next) => {
     const dayStartUTC = fromZonedTime(dayStartLocal, timezone).toISOString();
     const dayEndUTC   = fromZonedTime(dayEndLocal, timezone).toISOString();
 
-    // ============================
+    const horizonDays = (targetUTC.getTime() - Date.now()) / 86_400_000;
+    const mode: 'forecast' | 'outlook' = horizonDays <= 10 ? 'forecast' : 'outlook';
+
+    if (mode === 'outlook') {
+      // Placeholder OUTLOOK (sin llamar a Meteomatics)
+      // Aquí luego metemos: climatología (p50/p25/p75) y “anomalía” suavizada
+      return res.json({
+        mode,
+        location: { lat, lon },
+        targetISO: targetISO_utc,
+        timezone,
+        outlook: {
+          confidence: 'low',
+          notes: [
+            'Extended outlook basado en climatología y tendencias generales.',
+            'Los valores son rangos/percentiles, no pronóstico horario.',
+            'Para pronóstico horario usa fechas dentro de 10 días.'
+          ],
+          temp: {
+            typical_hi_c: null,  // TODO: p50 de Tmax climática para esa fecha
+            typical_lo_c: null,  // TODO: p50 de Tmin climática para esa fecha
+            expected_anomaly_c: 0, // TODO: “blend” de anomalía (forecast d+6..10 → decaimiento)
+            range_c: { p25: null, p50: null, p75: null } // TODO
+          },
+          precip: {
+            climo_prob_any_mm: null, // TODO: frecuencia climática de precipitación diaria
+            note: 'probabilidades climatológicas aproximadas'
+          },
+          uv: { typical_idx: null, band: null } // TODO: banda UV típica por época del año
+        },
+        meta: {
+          generatedAt: new Date().toISOString(),
+          horizonDays: +horizonDays.toFixed(1)
+        }
+      });
+    }
+
+    // === FORECAST (≤ 10 días): ===
+
     // 2) SERIE DEL DÍA (4 params)
-    // ============================
     const seriesParams = [
-      't_2m:C',              // temperatura horaria (sirve para H/L y temp "actual")
-      'precip_1h:mm',        // precip acumulada última hora
-      'prob_precip_1h:p',    // prob de precip última hora (right-aligned)
-      'uv:idx'               // índice UV horario
+      't_2m:C',
+      'precip_1h:mm',
+      'prob_precip_1h:p',
+      'uv:idx'
     ];
 
     const hourly = await getMeteomatics({
@@ -82,14 +119,12 @@ router.post('/', async (req, res, next) => {
       format: 'json'
     }) as MeteomaticsJSON;
 
-    // Indexar por parámetro → [{date,value}]
     const byParam: Record<string, { date: string; value: number }[]> = {};
     for (const s of hourly.data) {
       byParam[s.parameter] = (s.coordinates?.[0]?.dates ?? [])
         .map(d => ({ date: d.date, value: Number(d.value) }));
     }
 
-    // Helper: valor en la hora target (igual o anterior más cercana)
     function valueAt(param: string, isoUTC: string) {
       const arr = byParam[param] || [];
       const exact = arr.find(p => p.date === isoUTC);
@@ -98,36 +133,31 @@ router.post('/', async (req, res, next) => {
       return prev ? prev.value : NaN;
     }
 
-    // Temp/precip/uv/prob en la hora target (desde la serie)
     const tempNow = valueAt('t_2m:C', targetISO_utc);
     const p1h     = valueAt('precip_1h:mm', targetISO_utc);
     const pr1h    = valueAt('prob_precip_1h:p', targetISO_utc);
     const uvHour  = valueAt('uv:idx', targetISO_utc);
 
-    // Hi / Low del DÍA (sobre la serie t_2m del día local)
     const temps = byParam['t_2m:C'] ?? [];
     const hiC = temps.length ? Math.max(...temps.map(x => x.value)) : NaN;
     const loC = temps.length ? Math.min(...temps.map(x => x.value)) : NaN;
 
-    // Serie amigable para UI (hora local formateada)
     const hourlyOut = (byParam['t_2m:C'] || []).map((row, i) => ({
       timeLocal: formatInTimeZone(new Date(row.date), timezone, 'HH:mm'),
       tempC: row.value,
-      probPrecip1h_pct: Math.round(byParam['prob_precip_1h:p']?.[i]?.value ?? 0),
+      probPrecip1h_pct: Math.floor(byParam['prob_precip_1h:p']?.[i]?.value ?? 0), // 👈 si prefieres 1 decimal: Number(...toFixed(1))
       precip1h_mm: byParam['precip_1h:mm']?.[i]?.value ?? 0,
       uv_idx: byParam['uv:idx']?.[i]?.value ?? 0
     }));
 
-    // =================================
-    // 3) INSTANTÁNEO (6 params) → total 10
-    // =================================
+    // 3) INSTANTÁNEO (6 params)
     const instantParams = [
       'wind_speed_10m:ms',
       'wind_dir_10m:d',
       'wind_gusts_10m_1h:ms',
       'relative_humidity_2m:p',
       'precip_24h:mm',
-      'air_quality_pm2p5:idx' // usamos PM2.5 como "overall" por ahora
+      'air_quality_pm2p5:idx'
     ];
 
     const instant = await getMeteomatics({
@@ -147,10 +177,7 @@ router.post('/', async (req, res, next) => {
     const p24h    = pick('precip_24h:mm');
     const aqiPM25 = pick('air_quality_pm2p5:idx'); // 0..5
 
-    // ============================
-    // 4) Probability Check (UI)
-    // ============================
-    // Reglas simples (ajustables):
+    // 4) Probability Check
     const n = temps.length;
     const extremeRain = pct((byParam['precip_1h:mm'] || []).filter(x => x.value >= 7).length, n);
     const dangerousUV = pct((byParam['uv:idx'] || []).filter(x => x.value >= 8).length, n);
@@ -162,15 +189,13 @@ router.post('/', async (req, res, next) => {
         ? pct((byParam['prob_precip_1h:p'] || []).filter(x => x.value >= 60).length, n)
         : 0
     );
-    // “Very humid” (placeholder): prob lluvia ≥50% o UV bajo con HR alta en la hora target
     const veryHumid   = pct(
       hourlyOut.filter(x => x.probPrecip1h_pct >= 50 || (x.uv_idx < 3 && rh >= 70)).length, n
     );
 
-    // ============================
-    // 5) Respuesta para la UI
-    // ============================
+    // 5) Respuesta forecast
     const payload = {
+      mode,
       location: { lat, lon, name: null },
       panel: {
         veryFlag: { veryWet, veryHot, veryCold, veryHumid, extremeRain, dangerousUV },
@@ -194,7 +219,12 @@ router.post('/', async (req, res, next) => {
         overall_text: ['Great','Good','Moderate','Poor','Very Poor','Extremely Poor'][Math.min(5, Math.max(0, Math.round(aqiPM25)))]
       },
       alerts: [],
-      meta: { source: 'meteomatics', generatedAt: new Date().toISOString(), params: { series: seriesParams, instant: instantParams } }
+      meta: {
+        source: 'meteomatics',
+        generatedAt: new Date().toISOString(),
+        horizonDays: +horizonDays.toFixed(1),
+        params: { series: seriesParams, instant: instantParams }
+      }
     };
 
     res.json(payload);
