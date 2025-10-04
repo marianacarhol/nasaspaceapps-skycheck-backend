@@ -1,0 +1,32 @@
+{
+  "name": "nasaspaceapps-skycheck-backend",
+  "version": "1.0.0",
+  "description": "weather conditions app",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "npx tsc",
+    "start": "node dist/index.js",
+    "dev": "concurrently \"npx tsc --watch\" \"nodemon -q dist/index.js\"",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Mariana Carrillo",
+  "license": "ISC",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "dotenv": "^16.6.1",
+    "express": "^5.1.0",
+    "morgan": "^1.10.1"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.3",
+    "@types/morgan": "^1.9.10",
+    "@types/node": "^24.6.2",
+    "concurrently": "^9.2.1",
+    "nodemon": "^3.1.10",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
+  }
+}
