@@ -28,3 +28,15 @@ export type MeteomaticsJSON = {
   user?: string;
   dateGenerated?: string;
 };
+
+export type AlertSeverity = 'info' | 'warning' | 'danger';
+
+export interface Alert {
+  id: string;                  // ej. "uv_high"
+  severity: AlertSeverity;     // 'info' | 'warning' | 'danger'
+  title: string;               // corto
+  message?: string;            // detalle
+  startsAt?: string;           // opcional
+  endsAt?: string;             // opcional
+  evidence?: Record<string, number | string>;
+}

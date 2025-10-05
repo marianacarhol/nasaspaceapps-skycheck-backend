@@ -1,3 +1,4 @@
+// src/index.ts
 import 'dotenv/config';
 import express from 'express';
 import morgan from 'morgan';
@@ -7,6 +8,7 @@ import helmet from 'helmet';
 import healthRouter from './routes/health.js';
 import riskRouter from './routes/risk.js';
 import dashboardRouter from './routes/dashboard.js';
+import geocodeRouter from './routes/geocode.js'; // 👈 NUEVO
 
 const app = express();
 
@@ -18,6 +20,7 @@ app.use(morgan('dev'));
 app.use('/health', healthRouter);
 app.use('/risk', riskRouter);
 app.use('/dashboard', dashboardRouter);
+app.use('/geocode', geocodeRouter); // 👈 NUEVO
 
 // 404
 app.use((req, res) => res.status(404).json({ error: 'Not Found' }));
